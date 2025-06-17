@@ -1,0 +1,116 @@
+general: 
+  n_threads: 100
+  pocket_th: 0.5
+  plddt_th: 70
+  pae_th: 10
+  probis_th: 5
+
+# Paths for data and results
+paths:
+  proteins: "data/proteins"
+  prank: "data/prank"
+  pockets: "data/pockets"
+  known_pockets: "data/known_pockets"
+  bind_dict: "data/bind_dict"
+  pae: "data/pae"
+  db_files: "data/db_files"
+  results: "results"
+  plots: "results/pictures"
+  deeplytough_results: "results/deeplytough"
+  probis_results: "results/probis"
+
+# Species and their colors and kingdoms
+species: 
+  - id: "ECOLI"
+    kingdom: "Bacteria"
+    up_id: "UP000000625"
+    color: "#0000FF"
+  - id: "YEAST"
+    kingdom: "Fungi"
+    up_id: "UP000002311"
+    color: "gray"
+  - id: "CANAL"
+    kingdom: "Fungi"
+    up_id: "UP000001940"
+    color: "#d62728"
+  - id: "ARATH"
+    kingdom: "Plantae"
+    up_id: "UP000006548"
+    color: "#990099"
+  - id: "MAIZE"
+    kingdom: "Plantae"
+    up_id: "UP000007305"
+    color: "black"
+  - id: "ORYSJ"
+    kingdom: "Plantae"
+    up_id: "UP000059680"
+    color: "green"
+  - id: "SOYBN"
+    kingdom: "Plantae"
+    up_id: "UP000008827"
+    color: "brown"
+  - id: "DROME"
+    kingdom: "Animalia"
+    up_id: "UP000000803"
+    color: "#40E0D0"
+  - id: "CAEEL"
+    kingdom: "Animalia"
+    up_id: "UP000001940"
+    color: "#f0e442"
+  - id: "MOUSE"
+    kingdom: "Animalia"
+    up_id: "UP000000589"
+    color: "#FF9900"
+  - id: "HUMAN"
+    kingdom: "Animalia"
+    up_id: "UP000005640"
+    color: "#FF9900"
+
+# Colors for kingdoms
+kingdom_color:
+  Animalia: "orange"
+  Plantae: "green"
+  Fungi: "#57B9FF"
+  Bacteria: "purple"
+
+# Ligand colors 
+# ChEBI ids that map the respective ligand categories are listed in extract_uniprot.py
+ligand_color:
+    "No known ligand": "#C7C7C7"
+    "Other compound": "gray"
+    "Several ligands": "#343534"
+    "Monosaccharide & derivatives": "#AA0DFE"
+    "Glycan": "#800080"
+    "Carbohydrate & derivatives": "#FF00FF"
+    "AA & derivatives": "#00FF00"
+    "Oligo- & polypeptide": "#109618"
+    "Nucleobase/nucleoside/nucleotide": "#0000FF"
+    "Nucleic acid": "#40E0D0"
+    "Lipid": "#FF0000"
+    "Inorganic ion": "#FF9DA6"
+    "Hetero nuclear cluster": "#FF7F00"
+    "Heme": "#FFFF00"
+
+# Cofactor colors
+# ChEBI ids that map the respective cofactor categories are listed in extract_uniprot.py
+cofactor_color: 
+    "No cofactor": "#bebdbd"
+    "Other cofactor": "gray"
+    "ADP/ATP": "#1980ed"
+    "Coenzyme A": "#2ca02c"
+    "FAD/FMN": "#d62728"
+    "GDP/GTP": "#9467bd"
+    "Heme": "#f0e442"
+    "NAD(P)": "#FF9900"
+    "Inorganic ion": "#990099"
+    "AA derivative": "#fc427b"
+    "Vitamin B": "#109618"
+
+# SEQ_PATH = "../../pm_clustering/results/proteins/seq_len_dict.pkl"
+# SEQ_DICT = pkl.load(open(SEQ_PATH, "rb"))
+# FS_PATH = "../../../foldseek/fs_clust_proteins.pkl"
+# FS_DICT = pkl.load(open(FS_PATH, "rb"))
+# Can the fragment information be downloaded directly with the UniProt dataframe?
+# FRAG_PATH = "../../../Pocketeome/db_files" 
+# DESC_PATH = "../../results/pocket_desc"
+

@@ -4,24 +4,38 @@ import numpy as np
 import os
 import glob
 import re
+import yaml
+import progressbar
+
 from libchebipy._chebi_entity import ChebiEntity
 from Bio.PDB import PDBParser
+
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse import csr_matrix
-import progressbar
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 
 def get_jaccard(list1, list2):
+    """
+    Calculate the Jaccard index between two lists.
+    Args:
+        list1 (list): First list of residues.
+        list2 (list): Second list of residues.
+    Returns:
+        float: Jaccard index rounded to two decimal places.
+    """
+    # As we are mainly interested in the recovered residues of the known binding sites
+    # and the fraction of residues found in a transmembrane domain, 
+    # we report the Jaccard index as the fraction of residues in list1 and not the uninon of both lists.
     intersection = len(list(set(list1).intersection(list2)))
-    union = (len(list1) + len(list2)) - intersection
+    # union = (len(list1) + len(list2)) - intersection
     return round(float(intersection)/len(list1), 2)
 
 
 def get_tm_info(df, prot):
-    # TO DO
-    # Include ligand label --> discriminates between different ligand entities
+    
     if type(df.at[prot, "Transmembrane"]) == float:
         return None
     
@@ -42,14 +56,27 @@ def get_tm_info(df, prot):
     
 
 
-def get_bs(df, path, prot, greater_than = 4, shorter_than=32):
+def get_bs(df, path, prot, greater_than = 4):
+    """
+    Extract binding sites from the UniProt database for a given protein.
+    Args:
+        df (pd.DataFrame): DataFrame containing UniProt data.
+        path (str): Path to the PDB file of the protein.
+        prot (str): UniProt ID of the protein.
+        greater_than (int): Minimum number of residues in a binding site to consider it valid.
+    Returns:
+        list: A list of dictionaries, each containing information about a binding site.
+    """
+    # If the binding site data is not available for the protein, return empty lists
     if type(df.at[prot, "Binding site"]) == float:
-        return [], {}, []
+        return []
     
     data = df.at[prot, "Binding site"]
     pocket_dict = {}
+    # Regular expression to match binding site information
     pattern = r'BINDING\s+(\d+)(?:\.\.(\d+))?;\s+/ligand="([^"]+)";\s+/ligand_id="([^"]+)";(?:\s+/ligand_label="(\d+)";)?\s+/evidence="([^"]+)"'
     
+    # Find all matches in the data
     for match in re.finditer(pattern, data):
         start = int(match.group(1))
         end = int(match.group(2)) if match.group(2) else None
@@ -76,13 +103,11 @@ def get_bs(df, path, prot, greater_than = 4, shorter_than=32):
                 "evidence": evidence
             }
     pocket_list = []
-    ligands = {}
-    lig_list = []
+    # Post-process the binding sites to filter and format them
     for (lig, label), pocket in pocket_dict.items():
-        num_res = len(pocket["res"])
-        if pocket["ligand_id"] == "CHEBI:30413" or "heme" in lig.lower():
-            print(f"Found heme binding site for : {prot}, with {num_res} residues")
-        # Check if pocket is inter-chain 
+        if len(pocket["res"]) < greater_than:
+            continue
+        # Check if pocket is inter-chain and split it if necessary
         split_pockets, shorter = is_interchain(path, prot, pocket["res"])
         cofactor = is_cofactor(pocket["ligand_id"])
         if not shorter:
@@ -90,11 +115,11 @@ def get_bs(df, path, prot, greater_than = 4, shorter_than=32):
             if len(split_pockets) > 1: 
                 is_inter = True
             for res in split_pockets:
-                if len(res) >= greater_than and len(res) <= shorter_than:
-                    pocket_list.append({"org": org, "ligand": pocket["ligand_id"], "lig_name": lig, "res": res, "cf": cofactor, "evidence": pocket["evidence"], "found": False, "prob": 0, "is_inter": is_inter})      # Check if AF model has less AAs than where the pocket is located, e.g., O60673, and that pocket is longer than a certain threshold
-                    ligands[pocket["ligand_id"]] = 1
-                    lig_list.append(pocket["ligand_id"])
-    return pocket_list, ligands, lig_list
+                pocket_list.append({"species": species, "ligand": pocket["ligand_id"],
+                                    "lig_name": lig, "res": res, "cf": cofactor,
+                                    "evidence": pocket["evidence"], "found": False,
+                                    "prob": 0, "is_inter": is_inter}) 
+    return pocket_list
 
 
 def get_chebi(chebi, target_ids):
@@ -104,7 +129,6 @@ def get_chebi(chebi, target_ids):
     Adenosine-5'-phosphate: CHEBI:37096
     Flavine adenine dinucleutide: CHEBI:24040
     Coenzyme A: CHEBI:15346
-
 
     Compounds classes:
     Carbohydrate: CHEBI:16646
@@ -135,34 +159,24 @@ def get_chebi(chebi, target_ids):
 
     Other compound
     No known compound
-
-    Other compounds:
-    Vitamin B: CHEBI:75769
-    Vitamin E: CHEBI:33234
-    Vitamin K: CHEBI:28384
-    Quinone: CHEBI:36141
-    Sulfide: CHEBI:26822
-    Chlorophyll: CHEBI:28966
-    Heteroarene: CHEBI:33833  # semaxanib (azole)
-    Ester: CHEBI:35701
-    Amide: CHEBI:32988
-    Aldehyde: CHEBI:17478
-    Alcohol: CHEBI:30879
-    Thiazide: CHEBI:50264
-    Organohalogen compound: CHEBI:17792
-    Elemental molecular entity: CHEBI:33259 #Oxygen, carbon, etc
-    Iron chelate: CHEBI:5975
-    Elemental molecular entity: CHEBI:33259 #Oxygen, carbon, etc
     """
     chebi_entity = ChebiEntity(chebi)
     return search_relations(chebi_entity, [chebi], target_ids)
 
 
 def search_relations(entity, searched, target_ids):
+    """
+    Recursively searches through the relations of a ChEBI entity to find a target compound class or cofactor.
+    Args:
+        entity (ChebiEntity): The ChEBI entity to search.
+        searched (list): A list of already searched ChEBI IDs to avoid cycles.
+        target_ids (list): A list of target ChEBI IDs to search for.
+    Returns:
+        str: The target ChEBI ID if found, otherwise None.
+    """
     for rel in entity.get_outgoings():
         if rel.get_target_chebi_id() in searched or rel.get_target_chebi_id() == "CHEBI:24431":
             continue
-        # elif rel.get_type() != "is_a" and rel.get_type() != "is_conjugate_base_of" and rel.get_type() != "is_conjugate_acid_of" and rel.:
         elif "is_" not in rel.get_type():
             continue
         elif rel.get_target_chebi_id() in target_ids:
@@ -176,6 +190,17 @@ def search_relations(entity, searched, target_ids):
 
 
 def is_interchain(path, prot, res_list, dist_th=12, greater_than = 4):
+    """
+    Checks if the binding site residues are inter-chain and splits them if necessary.
+    Args:
+        path (str): Path to the PDB file of the protein.
+        prot (str): UniProt ID of the protein.
+        res_list (list): List of residue indices in the binding site.
+        dist_th (float): Distance threshold to consider residues as part of the same pocket.
+        greater_than (int): Minimum number of residues in a pocket to consider it valid.
+    Returns:
+        list: A list of lists, where each inner list contains residue indices of a pocket.
+    """
     parser = PDBParser()
     structure = parser.get_structure(prot,path)
     residues = [r for r in structure.get_residues()]
@@ -184,7 +209,8 @@ def is_interchain(path, prot, res_list, dist_th=12, greater_than = 4):
         for res in res_list:
             pocket_res.append(residues[int(res)-1])
     except:
-        print(prot, res)
+        # Skip the pocket if there's a mismatch between the residues in the UniProt database and the AF model
+        print(f"Error in {prot} with residues {res_list}. Skipping...")
         return [], True
 
     distances = np.empty([len(res_list), len(res_list)])
@@ -195,6 +221,8 @@ def is_interchain(path, prot, res_list, dist_th=12, greater_than = 4):
             distances[i, j] = res1["CA"]-res2["CA"]
             distances[j, i] = res1["CA"]-res2["CA"]
 
+    # Inter-chain pockets in homomers, i.e., pockets that are formed by different chains, are not separated in UniProt database
+    # Hence, we split them based on the all-against-all distance matrix and a threshold 
     if distances.max() > dist_th:
         dist_binary = distances
         dist_binary[dist_binary <= dist_th] = 1
@@ -211,6 +239,13 @@ def is_interchain(path, prot, res_list, dist_th=12, greater_than = 4):
 
 
 def is_cofactor(chebi):
+    """
+    Checks if a given ChEBI ID corresponds to a cofactor.
+    Args:
+        chebi (str): The ChEBI ID to check.
+    Returns:
+        str: The ChEBI ID of the cofactor if found, otherwise "No cofactor" or "Other cofactor".
+    """
     chebi_entity = ChebiEntity(chebi)
     for rel in chebi_entity.get_outgoings():
         if rel.get_type() == "has_role" and rel.get_target_chebi_id() == "CHEBI:23357": # CHEBI ID for biological role as cofactor
@@ -223,6 +258,7 @@ def is_cofactor(chebi):
 
 
 def search_rel_cf(entity, searched):
+
     cf_ids = ["CHEBI:25524", "CHEBI:61296", "CHEBI:61292", "CHEBI:36981", "CHEBI:176783", "CHEBI:75769", "CHEBI:83821", "CHEBI:30413", "CHEBI:15346", "CHEBI:26191", "CHEBI:36914"]
     for rel in entity.get_outgoings():
         if rel.get_type() != "is_a" and rel.get_type() != "is_conjugate_base_of" and rel.get_type() != "is_conjugate_acid_of":
@@ -238,210 +274,189 @@ def search_rel_cf(entity, searched):
                  return result
     return None
 
-# Define in separate config file 
-# No absoulute path should be defined within the code
-RESULTS_PATH = "../../results"
-PLOT_DIR = "../../results/pictures/REVISION"
-DB_PATH = "../../../Pocketeome/db_files"
-SEQ_PATH = "../../results/proteins/seq_len_dict.pkl"
-SEQ_DICT = pkl.load(open(SEQ_PATH, "rb"))
-ORGANISMS = ["ECOLI", "YEAST", "CANAL", "ARATH", "ORYSJ","MAIZE", "SOYBN", "DROME", "CAEEL", "MOUSE", "HUMAN"]
-# ORGANISMS = ["ECOLI"]
-ALL_POCKETS = []
-KNOWN_FILE = "../../data/known_pockets/known_pockets_up.pkl"
-RESULTS = []
+if __name__ == "__main__":
+    # Load configuration file and define parameters
+    with open("../../config/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
 
-for org in ORGANISMS:
-    if not os.path.isdir(f"../../results/pictures/{org}"):
-        os.mkdir(f"../../results/pictures/{org}")
+    RESULTS_PATH = config["paths"]["results"]
+    PLOT_DIR = config["paths"]["pictures"]
+    DB_PATH = config["paths"]["db_files"] 
+    BIND_DICT_PATH = config["paths"]["bind_dict"]
+    KNOWN_PATH = config["paths"]["known_pockets"]
+    KNOWN_FILE = f"{KNOWN_PATH}/known_pockets_up.pkl"
+    if not os.path.exists(KNOWN_PATH):
+        os.makedirs(KNOWN_PATH)
 
-    up_path = f"~/Pocketeome/db_files/{org}"
-    bind_dict_path = f"../../results/all_pockets/{org}_pockets.pkl"
-    out_path = f"../../results/pocket_desc/{org}"
-    struc_path = f"../../data/proteins/{org}"
+    SEQ_PATH = config["paths"]["seq_len_dict"] # TODO
+    SEQ_DICT = pkl.load(open(SEQ_PATH, "rb")) #TODO Add protein preprocessing script
+    SPECIES = [species["name"] for species in config["species"]]
 
-    up_df = pd.read_csv(os.path.join(up_path, f"{org}_UP.csv"), index_col="Entry")
-    bind_dict = pkl.load(open(bind_dict_path, "rb"))
-    tm_dict = pkl.load(open(f"{RESULTS_PATH}/pocket_desc/{org}/{org}_tm_info.pkl", "rb"))
-    tm_failed = [prot for prot, tests in tm_dict.items() if tests["num_passed"] < 6]
-    print(f"Number of proteins with failed TM tests: {len(tm_failed)}")
-
-    if os.path.isfile(os.path.join(up_path, f"frag_df.tsv.gz")):
-        fragments = list(pd.read_csv(os.path.join(up_path, f"frag_df.tsv.gz"), index_col="Entry", delimiter="\t", compression="infer").index)
-    else: 
-        fragments = []
-    all_prots = [os.path.basename(prot)[3:-4] for prot in glob.glob(f"{struc_path}/*pdb")]
-    all_prots = [prot for prot in all_prots if prot not in fragments and SEQ_DICT.get(prot, 0) > 100 and prot not in tm_failed]
-
-    # Define class IDs and class map in config file
-    # These IDs are from ChEBI and should be updated if new classes are added or changed 
+    # Define class IDs and mappings
+    # These are the ChEBI IDs for different compound classes and cofactors
+    # The class_map maps ChEBI IDs to human-readable class names
     class_ids = ["CHEBI:16646", "CHEBI:63299","CHEBI:167559", 
-                "CHEBI:35381", "CHEBI:63367", "CHEBI:15841",
-                "CHEBI:25676", "CHEBI:33709", "CHEBI:35238",
-                "CHEBI:83821", "CHEBI:16991", "CHEBI:33697",
-                "CHEBI:18282", "CHEBI:33838", "CHEBI:36976",
-                "CHEBI:18059", "CHEBI:36914", "CHEBI:30413",
-                "CHEBI:33733", "CHEBI:37163", "CHEBI:24867"]
-    
+                    "CHEBI:35381", "CHEBI:63367", "CHEBI:15841",
+                    "CHEBI:25676", "CHEBI:33709", "CHEBI:35238",
+                    "CHEBI:83821", "CHEBI:16991", "CHEBI:33697",
+                    "CHEBI:18282", "CHEBI:33838", "CHEBI:36976",
+                    "CHEBI:18059", "CHEBI:36914", "CHEBI:30413",
+                    "CHEBI:33733", "CHEBI:37163", "CHEBI:24867"]
+        
     class_map = {"CHEBI:16646": "Carbohydrate & derivatives", "CHEBI:63299": "Carbohydrate & derivatives", "CHEBI:167559": "Glycan", "CHEBI:37163": "Glycan",
-                 "CHEBI:35381": "Monosaccharide & derivatives", "CHEBI:63367": "Monosaccharide & derivatives", "CHEBI:15841": "Oligo- & polypeptide",
-                 "CHEBI:25676": "Oligo- & polypeptide", "CHEBI:33709": "AA & derivatives", "CHEBI:35238": "AA & derivatives",
+                "CHEBI:35381": "Monosaccharide & derivatives", "CHEBI:63367": "Monosaccharide & derivatives", "CHEBI:15841": "Oligo- & polypeptide",
+                "CHEBI:25676": "Oligo- & polypeptide", "CHEBI:33709": "AA & derivatives", "CHEBI:35238": "AA & derivatives",
                 "CHEBI:83821": "AA & derivatives", "CHEBI:16991": "Nucleic acid", "CHEBI:33697": "Nucleic acid", "CHEBI:18282": "Nucleobase/nucleoside/nucleotide",
                 "CHEBI:33838": "Nucleobase/nucleoside/nucleotide", "CHEBI:36976": "Nucleobase/nucleoside/nucleotide", "CHEBI:18059": "Lipid",
                 "CHEBI:36914": "Inorganic ion", "CHEBI:24867": "Inorganic ion", "CHEBI:30413": "Heme", "CHEBI:33733": "Hetero nuclear cluster",
                 "Other compound": "Other compound"}
-
-    class_color = {"No known ligand": "#C7C7C7", "Other compound": "gray", "Several ligands": "#343534", "Monosaccharide & derivatives": "#AA0DFE", 
-                "Glycan": "#800080", "Carbohydrate & derivatives": "#FF00FF", "AA & derivatives": "#00FF00", "Oligo- & polypeptides": "#109618",
-                "Nucleobase/nucleoside/nucleotide": "#0000FF", "Nucleic acid": "#40E0D0", "Lipid": "#FF0000", "Inorganic ion": "#FF9DA6",
-                "Hetero nuclear cluster": "#FF7F00", "Heme": "#FFFF00"}
-
-    plant_ids = ["CHEBI:28966", "CHEBI:23044", "CHEBI:26125", "CHEBI:24279", "CHEBI:72544", 
-                "CHEBI:26848", "CHEBI:6457", "CHEBI:26873", "CHEBI:22315", "CHEBI:26605",
-                "CHEBI:22676", "CHEBI:23530", "CHEBI:24250"]
-    
+        
     cf_map = {"CHEBI:25524": "NAD(P)", "CHEBI:61296": "ADP/ATP", "CHEBI:61292": "GDP/GTP",
             "CHEBI:36981": "FAD/FMN", "CHEBI:176783": "Other cofactor", "CHEBI:75769": "Vitamin B",
             "CHEBI:83821": "AA derivative", "CHEBI:30413": "Heme", "CHEBI:15346": "Coenzyme A", 
             "CHEBI:26191": "Other cofactor", "CHEBI:36914": "Inorganic ion", "No cofactor": "No cofactor", "Other cofactor": "Other cofactor"}
 
-    cf_colors = {"ADP/ATP": "#1980ed", "Coenzyme A": "#2ca02c", "FAD/FMN": "#d62728", "GDP/GTP": "#9467bd",
-                "Heme": "#f0e442", "NAD(P)": "#ff9896", "Inorganic ion": "#7d3c98", "AA derivative": "#fc427b",
-                "Vitamin B": "#008080", "Other cofactor": "gray", "No cofactor": "#bebdbd"}
+    for species in SPECIES:
+        print(f"Processing {species}...")
+        # Define paths for the current species
+        up_path = f"{DB_PATH}/{species}"
+        bind_dict_path = f"{BIND_DICT_PATH}/{species}_pockets.pkl"
+        struc_path = f"../../data/proteins/{species}"
 
+        # Load UniProt data and binding site dictionary
+        up_df = pd.read_csv(os.path.join(up_path, f"{species}_UP.csv"), index_col="Entry") #TODO
+        bind_dict = pkl.load(open(bind_dict_path, "rb"))
+        tm_dict = pkl.load(open(f"{RESULTS_PATH}/pocket_desc/{species}/{species}_tm_info.pkl", "rb")) #TODO
+        tm_failed = [prot for prot, tests in tm_dict.items() if tests["num_passed"] < 6] #TODO
+        print(f"Number of proteins with failed TM tests: {len(tm_failed)}")
 
-    ec_dict = {}
-    cofactor_dict = {}
-    tm_dom_dict = {}
-    known_bs = {}
-    known_bs_found = {}
-    all_ligands = {}
-    all_lig_list = []
-    # n_inter = 0
-    print(org)
+        if os.path.isfile(os.path.join(up_path, f"frag_df.tsv.gz")):
+            fragments = list(pd.read_csv(os.path.join(up_path, f"frag_df.tsv.gz"), index_col="Entry", delimiter="\t", compression="infer").index)
+        else: 
+            fragments = []
+        all_prots = [os.path.basename(prot)[3:-4] for prot in glob.glob(f"{struc_path}/*pdb")]
+        all_prots = [prot for prot in all_prots if prot not in fragments and SEQ_DICT.get(prot, 0) > 100 and prot not in tm_failed]
 
-    ligands = {target:0 for target in class_map.keys()}
-    ligands["Other compound"] = 0
-    lig_map = {}
+        tm_dom_dict = {}
+        known_bs = {}
+        lig_map = {}
 
-    with progressbar.ProgressBar(max_value=len(all_prots)) as bar:
-        for idx, prot in enumerate(all_prots):
-            if prot not in up_df.index:
-                ec = "No EC"
-                ec_dict[prot] = "No EC"
-                known_bs[prot] = []
-                tm_dom_dict[prot] = []
-                continue
+        with progressbar.ProgressBar(max_value=len(all_prots)) as bar:
+            for idx, prot in enumerate(all_prots):
+                if prot not in up_df.index:
+                    ec = "No EC"
+                    known_bs[prot] = []
+                    tm_dom_dict[prot] = []
+                    continue
 
-            ec = up_df.at[prot, "EC number"]
+                # Get EC number for the protein
+                ec = up_df.at[prot, "EC number"]
+                if type(ec) == float:
+                    ec = "No EC"
+                elif len(ec.split(";")) > 1:
+                    ec = "More than 1 EC"
+                else:
+                    ec = f"EC {int(ec[0])}.-.-.-"
 
-            if type(ec) == float:
-                ec_dict[prot] = "No EC"
-                ec = "No EC"
-            elif len(ec.split(";")) > 1:
-                ec_dict[prot] = "More than 1 EC"
-                ec = "More than 1 EC"
-            else:
-                ec_dict[prot] = f"EC {int(ec[0])}.-.-.-"
-                ec = f"EC {int(ec[0])}.-.-.-"
-            
-            pockets, ligands, ligand_list = get_bs(up_df, os.path.join(struc_path, f"AF-{prot}.pdb"), prot)
-            tm_domains = get_tm_info(up_df, prot)
+                # Extract binding sites for the protein
+                pockets = get_bs(up_df, os.path.join(struc_path, f"AF-{prot}.pdb"), prot)
+                # Assign ligand classes and names to the pockets
+                for pocket in pockets:
+                    pocket["EC"] = ec 
+                    if pocket["ligand"] not in lig_map.keys():
+                        compound_class = get_chebi(pocket["ligand"] , class_ids)
+                        if not compound_class or compound_class == "CHEBI:24431":
+                            compound_class = "Other compound"
+                        class_name = class_map.get(compound_class, "Other compound")
+                    else: 
+                        compound_class = lig_map.get(pocket["ligand"])
+                        class_name = class_map.get(compound_class, "Other compound")
+                    pocket["lig_class"] = compound_class
+                    pocket["class_name"] = class_name
+               
+                known_bs[prot] = pockets
+                tm_domains = get_tm_info(up_df, prot)
+                tm_dom_dict[prot] = tm_domains
+                bar.update(idx)
 
+        for prot, pockets in bind_dict.items():
+            tm_domains = tm_dom_dict.get(prot[3:], None)
             for pocket in pockets:
-                pocket["EC"] = ec 
-                if pocket["cf"] not in cofactor_dict.keys():
-                    cofactor_dict[pocket["cf"]] = 1
-                elif pocket["cf"] in cofactor_dict.keys():
-                    cofactor_dict[pocket["cf"]] += 1
 
-                if pocket["ligand"] not in lig_map.keys():
-                    compound_class = get_chebi(pocket["ligand"] , class_ids)
-                    if not compound_class or compound_class == "CHEBI:24431":
-                        compound_class = "Other compound"
-                    class_name = class_map.get(compound_class, "Other compound")
-                else: 
-                    compound_class = lig_map.get(pocket["ligand"])
-                    class_name = class_map.get(compound_class, "Other compound")
-                pocket["lig_class"] = compound_class
-                pocket["class_name"] = class_name
+                prob = pocket["prob"]
+                known_pockets = known_bs.get(prot[3:])
+                if not known_pockets: 
+                    known_pockets = []
 
-            # n_inter += current_inter
-            tm_dom_dict[prot] = tm_domains
-            known_bs[prot] = pockets
-            known_bs_found[prot] = [False] * len(pockets)
-            all_ligands.update(ligands)
-            all_lig_list += ligand_list
-            bar.update(idx)
+                # If the pocket is found in the known pockets, we assign it:
+                # - a ligand
+                # - a class name
+                # - a cofactor class
+                # - a Jaccard index (overlap with known pocket)
+                # If the pocket is not found in the known pockets, we assign it:
+                # - "No known ligand" as compound class 
+                # - "No cofactor" as cofactor class
+                label = "No known ligand"
+                cf_label = "No cofactor"
+                chebi = None
+                jacc = None
+                for idx, known in enumerate(known_pockets):
+                    if list(set(known["res"]) & set(pocket["res"])):
+                        if chebi:
+                            chebi.append(known["ligand"])
+                            label = "Several ligands"
+                            jacc.append(get_jaccard(known["res"], pocket["res"]))
+                        else:
+                            jacc = [get_jaccard(known["res"], pocket["res"])]
+                            chebi = [known["ligand"]]
+                            label = known["class_name"]
 
-    ec_labels = {}
-    lig_labels = {}
-    cf_labels = {}
-    PRED_POCKETS =  []
+                        cf_label = cf_map.get(known["cf"])
+                        
+                        if known["found"] == False:
+                            known["found"] = True
+                            known["prob"] = prob 
+                            known["jacc"] = get_jaccard(known["res"], pocket["res"])
 
-    for prot, pockets in bind_dict.items():
-        tm_domains = tm_dom_dict.get(prot[3:], None)
-        for pocket in pockets:
-            PRED_POCKETS.append(pocket)
-
-            prob = pocket["prob"]
-            known_pockets = known_bs.get(prot[3:])
-            if not known_pockets: 
-                known_pockets = []
-
-            label = "No known ligand"
-            cf_label = "No cofactor"
-            chebi = None
-            jacc = None
-
-            for idx, known in enumerate(known_pockets):
-                if list(set(known["res"]) & set(pocket["res"])):
-                    if chebi:
-                        chebi.append(known["ligand"])
-                        label = "Several ligands"
-                        jacc.append(get_jaccard(known["res"], pocket["res"]))
-                    else:
-                        jacc = [get_jaccard(known["res"], pocket["res"])]
-                        chebi = [known["ligand"]]
-                        label = known["class_name"]
-
-                    cf_label = cf_map.get(known["cf"])
-                    
-                    if known["found"] == False:
-                        known["found"] = True
-                        known["prob"] = prob 
-                        known["jacc"] = get_jaccard(known["res"], pocket["res"])
-                    elif known["found"] == True and known["prob"] < prob:
+                        # A known pocket can be intersect with several predicted pockets
+                        # In these cases, we keep the one with the highest probability
+                        elif known["found"] == True and known["prob"] < prob:
                             known["prob"] = prob
                             known["jacc"] = get_jaccard(known["res"], pocket["res"])
 
-            if chebi and len(chebi) == 1: 
-                chebi = chebi[0]
-                jacc = jacc[0]
+                if chebi and len(chebi) == 1: 
+                    chebi = chebi[0]
+                    jacc = jacc[0]
+                # If the pocket is not found in the known pockets, we assign it a new ligand
+                pocket["ligand"] = chebi
+                pocket["lig_class"] = label
+                pocket["jacc"] = jacc
+                pocket["cf_class"] = cf_label
 
-            pocket["ligand"] = chebi
-            pocket["lig_class"] = label
-            pocket["jacc"] = jacc
-            pocket["cf_class"] = cf_label
+                # Check if pocket is found in a transmembrane domain
+                # If so, add the information to the pocket
+                is_tm = False 
+                tm_note = [] 
+                tm_evidence = [] 
+                jacc = None
+                if tm_domains:
+                    for tm in tm_domains:
+                        if list(set(tm["res"]) & set(pocket["res"])):
+                            is_tm = True
+                            tm_note.append(tm["note"])
+                            tm_evidence.append(tm["evidence"])
+                            jacc = get_jaccard(pocket["res"], tm["res"])
+                pocket["is_tm"] = is_tm
+                pocket["tm_note"] = set(tm_note)
+                pocket["tm_evidence"] = set(tm_evidence)
+                pocket["tm_jacc"] = jacc
 
-            is_tm = False 
-            tm_note = [] 
-            tm_evidence = [] 
-            if tm_domains:
-                for tm in tm_domains:
-                    if list(set(tm["res"]) & set(pocket["res"])):
-                        is_tm = True
-                        tm_note.append(tm["note"])
-                        tm_evidence.append(tm["evidence"])
-            pocket["is_tm"] = is_tm
-            pocket["tm_note"] = set(tm_note)
-            pocket["tm_evidence"] = set(tm_evidence)
+        # Save the updated binding site dictionary and known pockets
+        if not os.path.isfile(KNOWN_FILE):
+            pkl.dump(known_bs, open(KNOWN_FILE, "wb"))
+        else:
+            known_up = pkl.load(open(KNOWN_FILE, "rb"))
+            known_up.update(known_bs)
+            pkl.dump(known_up, open(KNOWN_FILE, "wb"))
 
-    if not os.path.isfile(KNOWN_FILE):
-        pkl.dump(known_bs, open(KNOWN_FILE, "wb"))
-    else:
-        known_up = pkl.load(open(KNOWN_FILE, "rb"))
-        known_up.update(known_bs)
-        pkl.dump(known_up, open(KNOWN_FILE, "wb"))
-
-    pkl.dump(bind_dict, open(bind_dict_path, "wb"))
+        pkl.dump(bind_dict, open(bind_dict_path, "wb"))

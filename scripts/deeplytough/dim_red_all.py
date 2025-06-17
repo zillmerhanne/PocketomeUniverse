@@ -2,27 +2,23 @@ import os
 import numpy as np
 import pandas as pd
 import pickle as pkl
-import plotly.express as px
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA, FastICA
+import yaml
+
 from sklearn.neighbors import NearestNeighbors
-from sklearn.cluster import DBSCAN
-from sklearn.metrics import silhouette_score, pairwise_distances
-from sklearn.manifold import TSNE
 from scipy.stats import pearsonr, spearmanr
+from sklearn.decomposition import PCA, FastICA
+from sklearn.manifold import TSNE
 import umap 
-from scipy.spatial.distance import pdist
+
 import matplotlib.pyplot as plt 
 import seaborn as sns
 
 
 def plot_dim_red(df, red_type, scatter_configs, out_file):
-    sns.set(style="white")
     dpi = 300
-    fig_width_px = 2050
-    fig_height_px = 2625
-    figsize_in = (fig_width_px / dpi, fig_height_px / dpi)
-    fig, axes = plt.subplots(2, 2, figsize=figsize_in, dpi=dpi)
+    fig_width = 6.8
+    fig_height = 8.75
+    fig, axes = plt.subplots(2, 2, figsize=(fig_width, fig_height), dpi=dpi)
     plt.subplots_adjust(hspace=0.3, wspace=0.3)
     
     # Shared axis labels
@@ -30,6 +26,7 @@ def plot_dim_red(df, red_type, scatter_configs, out_file):
     y_col = f"{red_type}2"
     x_pos = [0, 0, 1, 1]
     y_pos = [0, 1, 0, 1]
+
     # Define the plots
     for i, (color_col, plot_label, cbar_title, cmap) in enumerate(scatter_configs):
         sc = sns.scatterplot(
@@ -45,7 +42,7 @@ def plot_dim_red(df, red_type, scatter_configs, out_file):
         axes[x_pos[i], y_pos[i]].set_xlabel(x_col, fontsize=10)
         axes[x_pos[i], y_pos[i]].set_ylabel(y_col, fontsize=10)
     
-        # Add colorbar manually
+        # Add colorbar 
         norm = plt.Normalize(df[color_col].min(), df[color_col].max())
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
@@ -75,12 +72,11 @@ def get_embeddings(results_path):
     return pocket_embeddings
 
 
-def k_distance_plot(data,th):
+def k_distance_plot(data):
   """Calculates and plots the k-distance graph.
 
   Args:
     data: The data points.
-    k: The number of nearest neighbors.
   """
   k_list = [3, 5, 7, 9, 11]
   fig, ax = plt.subplots()
@@ -95,27 +91,9 @@ def k_distance_plot(data,th):
   plt.ylabel('Distance')
   plt.title(f'K-Distance Graph')
   plt.legend()
-  plt.savefig(f"k_dist_{th}.png")
-
-
-def cluster_DBSCAN(org, th, embeddings_np):
-    results = []
-    for eps in [0.05, 0.1, 0.15, 0.2]:
-        for min_samples in [3, 5, 7, 9]:
-            dbscan = DBSCAN(eps=eps, min_samples=min_samples)  # Adjust eps and min_samples as needed
-            labels = dbscan.fit_predict(embeddings_np)
-
-            # Evaluate cluster quality
-            silhouette_avg = silhouette_score(embeddings_np, labels)
-            print("Silhouette coefficient:", silhouette_avg)
-            # Analyze cluster results
-            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-            unique, counts = np.unique(labels, return_counts = True)
-            counts = dict(zip(unique, counts))
-            print(f"#Clusters:in {n_clusters}, #Singletons: {counts.get(-1)}")
-
-            results.append([org, th, eps, min_samples, silhouette_avg, n_clusters, counts.get(-1)])
-    return results 
+  plt.savefig(f"{PLOT_DIR}/k_dist.png")
+  plt.close()
+  return 0
 
 
 def get_correl(embed, desc_np, desc_name, corr_type):
@@ -140,16 +118,15 @@ def get_correl(embed, desc_np, desc_name, corr_type):
 
 
 if __name__ == "__main__":
-    cluster_df = []
     # Add the definitions to a config file 
-    results_path = ".."
-    organisms = ["ECOLI", "CANAL", "YEAST", "HUMAN", "MOUSE", "ARATH", "DROME", "CAEEL", "MAIZE", "ORYSJ", "SOYBN"]
-    DEEPLYTOUGH_PATH = ".."
-    RESULTS_PATH = "../../pm_clustering/results"
-    PLOT_DIR = f"{RESULTS_PATH}/pictures/REVISION"
-    DB_PATH = "../../../Pocketeome/db_files"
-    SEQ_PATH = "../../pm_clustering/results/proteins/seq_len_dict.pkl"
-    SEQ_DICT = pkl.load(open(SEQ_PATH, "rb"))
+    # Load configurations
+    with open("config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+    SPECIES = [species["name"] for species in config["species"]]
+    BIND_DICT_PATH = config["paths"]["bind_dict"]
+    DEEPLYTOUGH_PATH = config["paths"]["deeplytough_results"]
+    PLOT_DIR = config["paths"]["plots"]
+
     scatter_configs = [
         ("hydro", "A","Hydrophobicity", "RdBu"),
         ("aro", "B", "Aromaticity", "viridis"),
@@ -160,43 +137,36 @@ if __name__ == "__main__":
         ("#res", "G", "# residues", "viridis")
         ("prob", "H", "Probability", "viridis"),
     ]
-
+    dim_red_cols = ['PC1', 'PC2', 'IC1', 'IC2',
+                    'UMAP1_n10', 'UMAP2_n10', 'UMAP1_n20', 'UMAP2_n20',
+                    'UMAP1_n50', 'UMAP2_n50', 'UMAP1_n100', 'UMAP2_n100',
+                    'UMAP1_n200', 'UMAP2_n200', 'tSNE1_p10', 'tSNE2_p10', 
+                    'tSNE1_p20', 'tSNE2_p20', 'tSNE1_p30', 'tSNE2_p30', 
+                    'tSNE1_p40', 'tSNE2_p40', 'tSNE1_p50', 'tSNE2_p50', 'tSNE1_p100', 'tSNE2_p100']
     
-    with open("../../pm_clustering/data/fasta/clustered_proteins.txt", "r") as f: 
-        lines = f.readlines()
-        clustered = [line.strip() for line in lines[1:]]
-
-    th = 0.5 
-
+    # Load all embeddings and pocket data
+    print("Load all embeddings and pocket data")
     embeddings_all = {}
     pockets_all = []
     pocket_ids = []
-    for org in organisms:   
-        print(f"Load data for: {org}")
-        bind_dict = pkl.load(open(f"../../pm_clustering/results/bind_dict/{org}_pockets.pkl", "rb"))
-        tm_dict = pkl.load(open(f"../../pm_clustering/results/pocket_desc/{org}/{org}_tm_info.pkl", "rb"))
-        
+    for species in SPECIES:   
+        print(f"Load data for: {species}")
+        bind_dict = pkl.load(open(f"{BIND_DICT_PATH}/{species}_pockets.pkl", "rb"))
+
         pockets_all += [pocket for pockets in bind_dict.values() for pocket in pockets]
         pocket_ids += [pocket["pocket_id"] for pockets in bind_dict.values() for pocket in pockets]
-        deeplytough_result = f"{DEEPLYTOUGH_PATH}/{org}/Custom-DeeplyTough-networks.pickle"
+        deeplytough_result = f"{DEEPLYTOUGH_PATH}/{species}/Custom-DeeplyTough-networks.pickle"
         embeddings = get_embeddings(deeplytough_result)
         embeddings_all.update(embeddings)
-        
-    
+
     pockets_all = pd.DataFrame.from_records(pockets_all)
     pockets_all["#res"] = pockets_all["res"].apply(lambda x: len(x))
     pockets_all.sort_values(by="pocket_id", inplace=True)
+
     embeddings_all = dict(sorted(embeddings_all.items(), key=lambda item: item[0]))
-    pkl.dump(embeddings_all, open("all_embeddings.pkl", "wb"))
-    # org_map_all = dict(sorted(org_map_all.items(), key=lambda item: item[0])) 
-    
-    embeddings_np = np.array(list(embeddings_all.values())) 
-    # dist = pairwise_distances(embeddings_np, n_jobs=10)
-    # with open("pairwise_dist.npy", "wb") as f: 
-    #    np.save(f, dist)              
-    
-    scaler = StandardScaler()
-    embeddings_norm = scaler.fit_transform(embeddings_np)
+    pkl.dump(embeddings_all, open(f"{DEEPLYTOUGH_PATH}/all_embeddings.pkl", "wb"))
+
+    embeddings_np = np.array(list(embeddings_all.values()))
 
     print("Calculate PCA")
     pca = PCA(n_components=4)
@@ -214,11 +184,11 @@ if __name__ == "__main__":
 
     n_neighbors = [10, 20, 50, 100, 200] 
     for n in n_neighbors:       
-        print("Calculate UMAP")
+        print(f"Calculate UMAP for n_neighbors = {n}")
         reducer = umap.UMAP(
-                n_neighbors = n, # local vs global clustering, with low n_neighbors the focus is more on local shapes (~2)
+                n_neighbors = n,  # local vs global clustering, with low n_neighbors the focus is more on local shapes (~2)
                 min_dist=0,       # low because we are interested in clustering 
-                n_components=2,   # to plot in 2D
+                n_components=2,   # to plot in 2D, instable in higher dimensions
                 random_state=1
                 )
         umap_out = reducer.fit_transform(embeddings_np)
@@ -231,9 +201,9 @@ if __name__ == "__main__":
         
     pockets_all.drop(columns=["UMAP1", "UMAP2"], inplace=True)
             
-    print("Calculate tSNE")
     perplexities = [10, 20, 30, 40, 50, 100]
     for perplexity in perplexities:
+        print(f"Calculate tSNE for perplexity = {perplexity}")
         # see: https://scikit-learn.org/stable/auto_examples/manifold/plot_t_sne_perplexity.html for effect of perplexity
         tsne = TSNE(n_components=2, 
                     learning_rate="auto", 
@@ -245,22 +215,11 @@ if __name__ == "__main__":
         print(f"Number of iterations needed for tSNE run: {tsne.n_iter_}")
         pockets_all[f"tSNE1_p{perplexity}"] = tsne_out[:,0]
         pockets_all[f"tSNE2_p{perplexity}"] = tsne_out[:,1]
-#
         pockets_all[f"tSNE1"] = tsne_out[:,0]
         pockets_all[f"tSNE2"] = tsne_out[:,1]
         plot_dim_red(pockets_all, "tSNE", scatter_configs, f"{PLOT_DIR}/tsne_p{perplexity}_desc.tif")
         
     pockets_all.drop(columns=["tSNE1","tSNE2"], inplace=True)
-
-    # print("Calculate tSNE")
-    # tsne = TSNE(n_components=2, learning_rate="auto", init='random', perplexity=15, n_iter=5000, random_state=1)   # see: https://scikit-learn.org/stable/auto_examples/manifold/plot_t_sne_perplexity.html for effect of perplexity
-    
-    # tsne_out = tsne.fit_transform(np.array([pca_out.T[0], pca_out.T[1], pca_out.T[2], pca_out.T[3], pca_out.T[4]]).T)
-    # tsne_out = pd.DataFrame(list(zip(list(org_map_all.values()),list(embeddings_all.keys()),tsne_out.T[0], tsne_out.T[1])), columns=["Organism", "Pocket ID","tSNE1", "tSNE2"])
-    # tsne_out.to_csv("tsne_on_pca.csv", index=False)
-    # print(f"Number of iterations needed for tSNE run: {tsne.n_iter_}")
-    # dim_red_df["tSNE1"] = tsne_out[:,0]
-    # dim_red_df["tSNE2"] = tsne_out[:,1]
     
     ica = FastICA(n_components=3)
     ica_out = ica.fit_transform(embeddings_np)
@@ -269,8 +228,13 @@ if __name__ == "__main__":
     pockets_all["IC2"] = ica_out[:,1]
     pockets_all["IC3"] = ica_out[:,2]
     plot_dim_red(pockets_all, "IC", scatter_configs, f"{PLOT_DIR}/ica_desc.tif")
-    pockets_all.to_csv(f"dim_red_all.csv", index=False)
+    
+    pockets_all.index = pockets_all["pocket_id"]
+    pockets_all = pockets_all[dim_red_cols]
+    pockets_all = pockets_all.to_dict(orient="index")
+    pkl.dump(pockets_all, open(f"{DEEPLYTOUGH_PATH}/dim_red_pockets.pkl", "wb"))
 
+    # Get correlation for different features and dimensionality reduction techniques
     columns = ["Pocket Desc", "Type"]
     columns += [f"Feat{idx+1}" for idx in range(embeddings_np.shape[1])]
     columns += ["PC1", "PC2", "PC3", "PC4", "IC1", "IC2", "IC3"]
@@ -282,11 +246,6 @@ if __name__ == "__main__":
     for feat in feats: 
         for correl in correl_types: 
             results_all.append(get_correl(embeddings_np, pockets_all[feat].to_numpy(), feat, correl))
-    results_all = pd.DataFrame(results_all, columns = columns)
     
-    for dim_red in ["PC1", "PC2", "PC3", "PC4", "IC1", "IC2", "IC3"]:
-        print(dim_red)
-        for pocket_desc, corr_type, corr in zip(results_all["Pocket Desc"], results_all["Type"], results_all[dim_red]):
-            if corr_type == "Spearman":
-                print(pocket_desc, round(corr, 3))
-    results_all.to_csv("Correlations.csv", index=False)
+    results_all = pd.DataFrame(results_all, columns = columns)
+    results_all.to_csv(f"{DEEPLYTOUGH_PATH}/Correlations.csv", index=False)

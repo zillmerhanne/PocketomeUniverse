@@ -12,6 +12,7 @@ The following data was downloaded:
 * Predicted protein structures from [AlphaFold database](https://alphafold.ebi.ac.uk/download)
 * P2Rank predictions for AlphaFold structures from [PrankWeb](https://prankweb.cz/about)
 * FoldSeek cluster information was downloaded from [AlphaFold Clusters](https://afdb-cluster.steineggerlab.workers.dev/)
+* Information about the transmembrane orientation of alpha-helical transmembrane protein's structure was downloaded from [TmAlphaFold](https://tmalphafold.ttk.hu/downloads) 
 
 ## Data preparation for binding site comparison 
 * Binding sites predicted by P2Rank were extracted using evaluate_bs.py
@@ -22,7 +23,7 @@ The following data was downloaded:
 The respective binaries for ProBiS were downloaded from their [website](http://insilab.org/probis-algorithm/). <br> 
 Results were analyzed using the following scripts: 
 * analyze alignments.py for extracting the alignment scores 
-* cluster_probis.py for clustering the score matrices 
+* probisScores_Clustering_ScalingLaw.R for clustering the score matrices 
 
 ## Binding site comparison using DeeplyTough 
 Binding site comparison using DeeplyTough was conducted using their docker image available at [docker hub](https://hub.docker.com/r/joshuameyers/deeplytough)<br> 
