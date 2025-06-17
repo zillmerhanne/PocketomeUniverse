@@ -35,7 +35,7 @@ def write_protein_srf(in_path, prot):
         prot (str): Protein identifier.
     Returns:
         int: 0 if successful"""
-    probis_command = [f'./probis -extract -f1 {in_path}/{prot}.pdb -c1 A -verbose -srffile {out_path}/{prot}.srf -longnames -out {org}']
+    probis_command = [f'./probis -extract -f1 {in_path}/{prot}.pdb -c1 A -verbose -srffile {out_path}/{prot}.srf -longnames -out {species}']
     subprocess.run(probis_command, shell=True, check=True)
     srf_files.append(f"{out_path}/{prot}.srf A\n")
     return 0
@@ -63,7 +63,7 @@ if __name__ == '__main__':
         srf_files = []
 
         for filename in glob.glob(f"{prot_dir}/*.pdb"):
-            filename = os.path.basename(filename) # TODO adapt for original filename
+            filename = os.path.basename(filename) 
             prot_id = "-".join(filename.split("-")[:2])  # Extract protein ID from filename
             if get_protein_surfaces: 
                 write_protein_srf(prot_dir, prot_id)

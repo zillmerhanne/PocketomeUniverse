@@ -1,4 +1,4 @@
-org,num_prot,num_pred,num_known,num_exp,no_seq_sim,seq_sim
+species,num_prot,num_pred,num_known,num_exp,no_seq_sim,seq_sim
 ECOLI,3813,2648,1036,224,280,756
 YEAST,5623,3000,1227,112,146,1081
 CANAL,5622,3124,407,11,28,379

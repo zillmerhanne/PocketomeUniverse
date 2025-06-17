@@ -68,8 +68,8 @@ species:
 
 # Colors for kingdoms
 kingdom_color:
-  Animalia: "orange"
   Plantae: "green"
+  Animalia: "orange"
   Fungi: "#57B9FF"
   Bacteria: "purple"
 
@@ -105,12 +105,4 @@ cofactor_color:
     "Inorganic ion": "#990099"
     "AA derivative": "#fc427b"
     "Vitamin B": "#109618"
-
-# SEQ_PATH = "../../pm_clustering/results/proteins/seq_len_dict.pkl"
-# SEQ_DICT = pkl.load(open(SEQ_PATH, "rb"))
-# FS_PATH = "../../../foldseek/fs_clust_proteins.pkl"
-# FS_DICT = pkl.load(open(FS_PATH, "rb"))
-# Can the fragment information be downloaded directly with the UniProt dataframe?
-# FRAG_PATH = "../../../Pocketeome/db_files" 
-# DESC_PATH = "../../results/pocket_desc"
 

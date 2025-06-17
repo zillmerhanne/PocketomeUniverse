@@ -68,7 +68,7 @@ if __name__ == "__main__":
     SPECIES = [species["name"] for species in config["species"]]
     STRUC_PATH = config["paths"]["proteins"]
     for species in SPECIES:
-        print("Processing organism:", species)
+        print("Processing species:", species)
         bind_dict = pkl.load(open(f"{BIND_DICT_PATH}/{species}_pockets.pkl", "rb"))
         prot_dir = f"{STRUC_PATH}/{species}"
 

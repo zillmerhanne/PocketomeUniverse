@@ -21,7 +21,7 @@ if __name__ == "__main__":
     STRUC_PATH = config["paths"]["proteins"]
     BIND_DICT_PATH = config["paths"]["bind_dict"]
     KNOWN_POCKETS_PATH = config["paths"]["known_pockets"]
-    UP_PATH = config["paths"]["db_files"]
+    DB_PATH = config["paths"]["db_files"]
     SEQ_DICT = pkl.load(open(f"{STRUC_PATH}/seq_len_dict.pkl", "rb"))
     FS_PATH = f"{STRUC_PATH}/fs_clust_proteins.pkl"
     FS_DICT = pkl.load(open(FS_PATH, "rb"))
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     pocket_info = []
     for species in SPECIES:
-        up_path = os.path.join(UP_PATH, species)
+        up_path = os.path.join(DB_PATH, species)
         struc_path = os.path.join(STRUC_PATH, species)
 
         tm_dict = pkl.load(open(f"{RESULTS_PATH}/pocket_desc/{species}/{species}_tm_info.pkl", "rb"))
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             fragments = list(pd.read_csv(os.path.join(up_path, f"frag_df.tsv.gz"), index_col="Entry", delimiter="\t", compression="infer").index)
         else: 
             fragments = []
-        all_prots = [os.path.basename(prot)[3:-4] for prot in glob.glob(f"{struc_path}/*pdb")]
+        all_prots = [os.path.basename(prot).split("-")[1] for prot in glob.glob(f"{struc_path}/*pdb")]
         all_prots = [prot for prot in all_prots if prot not in fragments and SEQ_DICT.get(prot, 0) >= 100]
         all_prots = [prot for prot in all_prots if prot not in tm_failed]
         fs_cluster = [FS_DICT.get(prot)["clusterID"] for prot in all_prots if FS_DICT.get(prot) is not None]
@@ -106,7 +106,7 @@ if __name__ == "__main__":
                             "num_fs": num_fs, "num_known": num_known,"num_exp": num_exp, 
                             "no_seq_sim": no_seq_sim, "seq_sim": seq_sim})
     pocket_info = pd.DataFrame.from_records(pocket_info)
-    pocket_info.to_csv(f"{PLOT_DIR}/pocket_info.csv", index=False)
+    pocket_info.to_csv(f"{RESULTS_PATH}/known_pockets_info.csv", index=False)
 
     # Evaluate enrichment of found pockets per ligand class
     lig_classes = list(class_color.keys())

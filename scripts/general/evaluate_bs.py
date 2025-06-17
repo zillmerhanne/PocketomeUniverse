@@ -125,8 +125,8 @@ def process_file(species, file, pred_path, th, out_path):
         'num_pockets': 0,
         "is_invalid": False
     }
-    # TODO: Adapt for original file names 
-    prot = os.path.basename(file)[:-4]
+    file = os.path.basename(file) 
+    prot = "-".join(file.split("-")[:2]) 
     prot_pockets, prob = get_pred_binding_sites(pred_path, prot, th_pocket=th, greater_than=4, smaller_than=1000)
     plddt_dict, seq_dict = get_plddt(struc_path, prot)
     tm_info = tm_dict.get(prot[3:], None)
@@ -167,7 +167,7 @@ def process_file(species, file, pred_path, th, out_path):
             result['num_pockets'] += 1                                                                                                 
     return prot, result, plddt_mean
 
-def process_files_in_parallel(struc_path, pred_path, th, out_path, org, max_workers=None):
+def process_files_in_parallel(struc_path, pred_path, th, out_path, species, max_workers=None):
     """
     Process multiple PDB files in parallel to extract binding sites and pLDDT values.
     Parameters:
@@ -175,7 +175,7 @@ def process_files_in_parallel(struc_path, pred_path, th, out_path, org, max_work
         pred_path (str): Path to the directory containing prediction files.
         th (float): Threshold for pocket probability.
         out_path (str): Path to save the output files.
-        org (str): Species name.
+        species (str): Species name.
         max_workers (int): Maximum number of workers for parallel processing.
         Returns:
             dict: Dictionary containing the pockets for each protein.
@@ -187,7 +187,7 @@ def process_files_in_parallel(struc_path, pred_path, th, out_path, org, max_work
     plddt_all = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_file, org, file, pred_path, th, out_path): file for file in files}
+        futures = {executor.submit(process_file, species, file, pred_path, th, out_path): file for file in files}
         num_prot = 0                                                                                                                      
         for future in as_completed(futures):
             file = futures[future]
@@ -196,7 +196,7 @@ def process_files_in_parallel(struc_path, pred_path, th, out_path, org, max_work
             if result['is_invalid']:
                 continue
 
-            plddt_all[prot] = {"org": org,
+            plddt_all[prot] = {"species": species,
                                 "prot_plddt": plddt_mean, 
                                 "has_pockets": result['has_pockets'],
                                 }
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     PLDDT_TH = config["generalt"]["plddt_th"]
 
     SPECIES = [species["id"] for species in config["species"]]
-    ORG_TITLES = [f"<b>{species}</b>" for species in SPECIES]
+    SPECIES_TITLES = [f"<b>{species}</b>" for species in SPECIES]
 
     STRUC_PATH = config["paths"]["proteins"]
     PRED_PATH = config["paths"]["prank"]
@@ -299,8 +299,7 @@ if __name__ == "__main__":
     PAE_PATH = config["paths"]["pae"]
     OUT_PATH = config["paths"]["results"]
     PLOT_DIR = config["paths"]["plots"]
-    FRAG_PATH = config["paths"]["fragments"] # TODO
-    DESC_PATH = config["paths"]["descriptions"] # TODO
+    DB_PATH = config["paths"]["db_files"]
 
     PLDDT_DATA = {}
     POCKET_DATA = {}
@@ -322,13 +321,10 @@ if __name__ == "__main__":
         pred_path = f"{PRED_PATH}/{species}"
         pocket_path = f"{POCKET_PATH}/{species}"
         out_file = f"{OUT_PATH}/bind_dict/{species}_pockets.pkl"
-        tm_dict = pickle.load(open(f"{DESC_PATH}/{species}/{species}_tm_info.pkl", "rb"))
-       
-        if not os.path.isfile(f"{FRAG_PATH}/{species}/frag_df.tsv.gz"): 
-            fragments = []
-        else:
-            fragments = pd.read_csv(f"{FRAG_PATH}/{species}/frag_df.tsv.gz", delimiter="\t")
-            fragments = fragments["Entry"].to_list()
+        tm_dict = pickle.load(open(f"{STRUC_PATH}/{species}_tm_info.pkl", "rb"))
+
+        up_df = pd.read_csv(f"{DB_PATH}/{species}/uniprot_df.tsv.gz", delimiter="\t", index_col="Entry")
+        fragments = list(up_df[~up_df["Fragment"].isna()].index)
 
         #Process all files in parallel and save results for plotting
         results, n_prot, plddt_all = process_files_in_parallel(struc_path, pred_path, TH, pocket_path, species, max_workers=THREADS)
@@ -455,6 +451,6 @@ if __name__ == "__main__":
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(f"{PLOT_DIR}/prot_plddt.tif", dpi=300)
 
-    info_df["prot_with_plddt"] = [med_dict[org]["with_bs"] for org in info_df["org"]]
-    info_df["prot_without_plddt"] = [med_dict[org]["without_bs"] for org in info_df["org"]]
+    info_df["prot_with_plddt"] = [med_dict[species]["with_bs"] for species in info_df["species"]]
+    info_df["prot_without_plddt"] = [med_dict[species]["without_bs"] for species in info_df["species"]]
     info_df.to_csv(f"{PLOT_DIR}/pocket_median.csv", index=False)

@@ -282,14 +282,14 @@ if __name__ == "__main__":
     RESULTS_PATH = config["paths"]["results"]
     PLOT_DIR = config["paths"]["pictures"]
     DB_PATH = config["paths"]["db_files"] 
+    PROT_PATH = config["paths"]["proteins"]
     BIND_DICT_PATH = config["paths"]["bind_dict"]
     KNOWN_PATH = config["paths"]["known_pockets"]
     KNOWN_FILE = f"{KNOWN_PATH}/known_pockets_up.pkl"
     if not os.path.exists(KNOWN_PATH):
         os.makedirs(KNOWN_PATH)
 
-    SEQ_PATH = config["paths"]["seq_len_dict"] # TODO
-    SEQ_DICT = pkl.load(open(SEQ_PATH, "rb")) #TODO Add protein preprocessing script
+    SEQ_DICT = pkl.load(open(f"{PROT_PATH}/seq_len_dict.pkl", "rb"))
     SPECIES = [species["name"] for species in config["species"]]
 
     # Define class IDs and mappings
@@ -324,17 +324,14 @@ if __name__ == "__main__":
         struc_path = f"../../data/proteins/{species}"
 
         # Load UniProt data and binding site dictionary
-        up_df = pd.read_csv(os.path.join(up_path, f"{species}_UP.csv"), index_col="Entry") #TODO
+        up_df = pd.read_csv(os.path.join(up_path, f"uniprot_df.tsv.gz"), index_col="Entry", delimiter="\t")
         bind_dict = pkl.load(open(bind_dict_path, "rb"))
-        tm_dict = pkl.load(open(f"{RESULTS_PATH}/pocket_desc/{species}/{species}_tm_info.pkl", "rb")) #TODO
+        tm_dict = pkl.load(open(f"{PROT_PATH}/{species}/{species}_tm_info.pkl", "rb")) #TODO
         tm_failed = [prot for prot, tests in tm_dict.items() if tests["num_passed"] < 6] #TODO
         print(f"Number of proteins with failed TM tests: {len(tm_failed)}")
 
-        if os.path.isfile(os.path.join(up_path, f"frag_df.tsv.gz")):
-            fragments = list(pd.read_csv(os.path.join(up_path, f"frag_df.tsv.gz"), index_col="Entry", delimiter="\t", compression="infer").index)
-        else: 
-            fragments = []
-        all_prots = [os.path.basename(prot)[3:-4] for prot in glob.glob(f"{struc_path}/*pdb")]
+        fragments = up_df[~up_df["Fragment"].isna()].index.tolist()
+        all_prots = [os.path.basename(prot).split("-")[1] for prot in glob.glob(f"{struc_path}/*pdb")]
         all_prots = [prot for prot in all_prots if prot not in fragments and SEQ_DICT.get(prot, 0) > 100 and prot not in tm_failed]
 
         tm_dom_dict = {}
